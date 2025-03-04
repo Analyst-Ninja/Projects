@@ -1,2 +1,2 @@
 # Projects
-Projects Repo
+Repository containing personal projects
