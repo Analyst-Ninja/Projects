@@ -173,3 +173,5 @@ cython_debug/
 .env
 .venv/
 
+.dockerignore
+

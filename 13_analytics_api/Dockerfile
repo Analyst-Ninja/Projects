@@ -1,27 +1,27 @@
 FROM python:3.10.16-slim-bullseye
 
+# Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends bash curl ca-certificates
 
+# Install uv (UltraViolet package manager)
 ADD https://astral.sh/uv/install.sh /uv-installer.sh
 RUN sh /uv-installer.sh && rm /uv-installer.sh
 
+# Set the PATH
 ENV PATH="/root/.local/bin/:$PATH"
 
-WORKDIR /code
+# Set working directory
+WORKDIR /app
 
-COPY ./src /code/src/
-COPY ./pyproject.toml ./uv.lock /code/
+# Copy dependencies files
+COPY ./pyproject.toml ./uv.lock /app/
 
-EXPOSE 8000
+# Create and sync virtual environment
+RUN uv venv && uv sync
 
-RUN uv sync
+# Activate virtual environment
+ENV PATH="/app/.venv/bin/:$PATH"
 
-RUN chmod +x /code/.venv/bin/activate
+# RUN cd /app/src
 
-RUN . /code/.venv/bin/activate
-
-WORKDIR /code/src/
-
-EXPOSE 8000
-
-CMD ["/code/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# RUN uvicorn main:app --host 0.0.0.0 --port 8000 --reload
