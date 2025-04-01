@@ -27,7 +27,7 @@ class EventListSchema(SQLModel):
 
 class EventCreateSchema(SQLModel):
     page: str
-    duser_agent: Optional[str] = Field(default="", index=True) # browser
+    user_agent: Optional[str] = Field(default="", index=True) # browser
     ip_address: Optional[str] = Field(default="", index=True)
     referrer: Optional[str] = Field(default="", index=True)
     session_id: Optional[str] = Field(index=True)
@@ -40,5 +40,8 @@ class EventCreateSchema(SQLModel):
 class EventBucketSchema(SQLModel):
     bucket: datetime
     page: str
+    ua: Optional[str] = ""
+    operating_system: Optional[str] = ""
+    average_duration: Optional[float] = 0.0
     count: int
 
