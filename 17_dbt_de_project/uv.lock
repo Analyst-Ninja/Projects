@@ -14,7 +14,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "dbt-core", specifier = ">=1.11.2" },
-    { name = "dbt-snowflake", specifier = ">=1.11.1" },
+    { name = "dbt-snowflake", specifier = ">=1.11.0" },
 ]
 
 [[package]]

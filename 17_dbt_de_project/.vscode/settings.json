@@ -1,0 +1,6 @@
+{
+    "dbt.perspectiveTheme": "Pro Dark",
+    "python-envs.pythonProjects": [],
+    "dbt.enableNewLineagePanel": true,
+    "dbt.queryLimit": 10
+}
