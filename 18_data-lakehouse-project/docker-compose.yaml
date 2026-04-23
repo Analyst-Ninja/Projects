@@ -1,0 +1,160 @@
+x-common-env: &common-env
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT"
+  KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+  KAFKA_CONTROLLER_QUORUM_VOTERS: "1@broker1:29093,2@broker2:29093"
+  KAFKA_PROCESS_ROLES: broker,controller
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+  CLUSTER_ID: "kafka-cluster-1"
+  KAFKA_LOG_DIRS: /tmp/kafka-combined-logs
+  KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+  CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: "broker1:29092,broker2:29092"
+  CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 2
+  CONFLUENT_METRICS_ENABLE: "true"
+  CONFLUENT_SUPPORT_CUSTOMER_ID: "anonymous"
+
+x-common-healthcheck: &common-healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 5
+
+services:
+  broker1:
+    image: confluentinc/cp-server:7.7.7
+    container_name: broker1
+    hostname: broker1
+    ports:
+      - "9092:9092"
+    environment:
+      <<: *common-env
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENERS: "INTERNAL://broker1:29092,CONTROLLER://broker1:29093,EXTERNAL://0.0.0.0:9092"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://broker1:29092,EXTERNAL://localhost:9092"
+    healthcheck:
+      <<: *common-healthcheck
+      test: ["CMD", "bash", "-c", "echo 'ruok' | nc localhost 9092"]
+    networks:
+      - lakehouse
+
+  broker2:
+    image: confluentinc/cp-server:7.7.7
+    container_name: broker2
+    hostname: broker2
+    ports:
+      - "9093:9093"
+    environment:
+      <<: *common-env
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENERS: "INTERNAL://broker2:29092,CONTROLLER://broker2:29093,EXTERNAL://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://broker2:29092,EXTERNAL://localhost:9093"
+    healthcheck:
+      <<: *common-healthcheck
+      test: ["CMD", "bash", "-c", "echo 'ruok' | nc localhost 9093"]
+    networks:
+      - lakehouse
+
+  control-center:
+    image: confluentinc/cp-enterprise-control-center:7.7.7
+    container_name: control-center
+    hostname: control-center
+    ports:
+      - "9021:9021"
+    environment:
+      CONTROL_CENTER_BOOTSTRAP_SERVERS: "broker1:29092,broker2:29092"
+      CONTROL_CENTER_REPLICATION_FACTOR: 1
+      CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
+      CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
+      CONTROL_CENTER_CONNECT_CLUSTER: "connect-cluster:8083"
+      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      CONFLUENT_CONTROL_CENTER_EMBEDDED_KAFKAREST_ENABLE: "false"
+      CONFLUENT_CONTROL_CENTER_UI_BROKERSETTINGS_KAFKAREST_ENABLE: "false"
+      CONFLUENT_METRICS_TOPIC_REPLICATION_FACTOR: 1
+      CONFLUENT_METRICS_ENABLE: "true"
+      PORT: 9021
+    healthcheck:
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      test: ["CMD", "curl", "-f", "http://localhost:9021"]
+    networks:
+      - lakehouse
+    depends_on:
+      - broker1
+      - broker2
+      - schema-registry
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.7.7
+    container_name: schema-registry
+    hostname: schema-registry
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "broker1:29092,broker2:29092"
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8081"
+    depends_on:
+      - broker1
+      - broker2
+    networks:
+      - lakehouse
+
+  minio:
+    hostname: minio
+    container_name: minio
+    image: minio/minio:RELEASE.2024-05-07T06-41-25Z
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    networks:
+      - lakehouse
+
+  mc-init:
+    image: "minio/mc"
+    container_name: mc-init
+    hostname: mc-init
+    depends_on:
+      - minio
+    entrypoint: |
+      /bin/sh -c "
+      sleep 10;
+      /usr/bin/mc alias set --quiet dmlminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb --ignore-existing --quiet dmlminio/bronze;
+      "
+    networks:
+      - lakehouse
+
+  spark-master:
+    image: bitnami/spark:latest
+    container_name: spark-master
+    command: bin/spark-class org.apache.spark.deploy.master.Master
+    volumes:
+      - ./jobs:/opt/bitnami/spark/jobs
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    networks:
+      - lakehouse
+  spark-worker:
+    image: bitnami/spark:latest
+    container_name: spark-worker
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    volumes:
+      - ./jobs:/opt/bitnami/spark/jobs
+    environment:
+      SPARK_MODE: worker
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 1g
+      SPARK_MASTER_URL: spark://spark-master:7077
+    networks:
+      - lakehouse
+networks:
+  lakehouse:
